@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caixas de Madeira Relaxantes</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #instrucoes {
+            position: absolute;
+            top: 20px;
+            color: #555;
+            pointer-events: none;
+            text-align: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instrucoes">Clique e arraste as caixas. Solte para ouvir o som.</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+
+    <script>
+        // Configurações Básicas
+        const { Engine, Render, Runner, Bodies, Composite, MouseConstraint, Mouse, Events } = Matter;
+
+        const engine = Engine.create();
+        const world = engine.world;
+
+        const render = Render.create({
+            element: document.body,
+            engine: engine,
+            options: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                wireframes: false,
+                background: '#000'
+            }
+        });
+
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // Criando Chão e Paredes (Invisíveis/Estáticos)
+        const ground = Bodies.rectangle(window.innerWidth / 2, window.innerHeight + 30, window.innerWidth, 60, { isStatic: true });
+        const leftWall = Bodies.rectangle(-30, window.innerHeight / 2, 60, window.innerHeight, { isStatic: true });
+        const rightWall = Bodies.rectangle(window.innerWidth + 30, window.innerHeight / 2, 60, window.innerHeight, { isStatic: true });
+        const ceiling = Bodies.rectangle(window.innerWidth / 2, -30, window.innerWidth, 60, { isStatic: true });
+
+        // Criando as Caixas de Madeira
+        const boxes = [];
+        for (let i = 0; i < 5; i++) {
+            const size = 80 + Math.random() * 40;
+            const box = Bodies.rectangle(
+                200 + Math.random() * (window.innerWidth - 400), 
+                100, 
+                size, size, 
+                {
+                    render: {
+                        fillStyle: '#5d4037', // Marrom madeira
+                        strokeStyle: '#3e2723',
+                        lineWidth: 5
+                    },
+                    friction: 0.5,
+                    restitution: 0.4 // Um pouco de "pulo"
+                }
+            );
+            boxes.push(box);
+        }
+
+        Composite.add(world, [ground, leftWall, rightWall, ceiling, ...boxes]);
+
+        // Adicionando Interação de Mouse
+        const mouse = Mouse.create(render.canvas);
+        const mouseConstraint = MouseConstraint.create(engine, {
+            mouse: mouse,
+            constraint: {
+                stiffness: 0.2,
+                render: { visible: false }
+            }
+        });
+
+        Composite.add(world, mouseConstraint);
+        render.mouse = mouse;
+
+        // --- SISTEMA DE SOM RELAXANTE (Sintetizador) ---
+        // Usamos AudioContext para criar sons de "ploc" suaves sem precisar de MP3
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playRelaxingSound(velocity) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.type = 'sine'; // Som suave
+            // A frequência muda conforme a velocidade do impacto
+            const freq = 150 + (Math.random() * 100);
+            oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            gainNode.gain.setValueAtTime(0.1 * (velocity / 5), audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.5);
+        }
+
+        // Detectar colisões para tocar o som
+        Events.on(engine, 'collisionStart', (event) => {
+            event.pairs.forEach((pair) => {
+                const speed = pair.collision.depth * 5; // Simula intensidade
+                if (speed > 1) {
+                    playRelaxingSound(speed);
+                }
+            });
+        });
+
+        // Ajustar tamanho ao redimensionar janela
+        window.addEventListener('resize', () => {
+            render.canvas.width = window.innerWidth;
+            render.canvas.height = window.innerHeight;
+        });
+
+    </script>
+</body>
+</html>

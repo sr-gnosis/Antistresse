@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sandbox RA - O Estalo Lendário</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { width: 100vw !important; height: 100vh !important; object-fit: cover; }
+        .hud {
+            position: absolute; top: 20px; left: 20px; color: #0f0;
+            background: rgba(0,0,0,0.85); padding: 18px; border-radius: 12px;
+            border: 2px solid #0f0; z-index: 10; pointer-events: none; font-family: sans-serif;
+        }
+        #snapMsg { 
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; font-size: 50px; font-weight: bold; text-shadow: 0 0 20px purple;
+            display: none; z-index: 20; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="snapMsg">ESTALO LENDÁRIO!</div>
+<div class="hud">
+    <b>ELEMENTO:</b> <span id="elemName">AREIA</span><br>
+    ☝️ Criar | ✌️ Trocar (1.2s) | ✊ Borracha<br>
+    👌 <b>ESTALO:</b> DESINTEGRAÇÃO TOTAL
+</div>
+
+<script>
+let video, handResults, grid, cols, rows;
+let cellSize = 12; 
+let currentElem = 1; 
+let lastToggleTime = 0; 
+let waveRadius = 0; // Para o efeito visual do estalo
+let waveX, waveY;
+let types = ["Vazio", "AREIA", "ÁGUA", "FOGO", "MADEIRA", "PEDRA", "PLANTA", "GELO", "VAPOR", "ÁCIDO"];
+let palette = [[0,0,0,0], [210,180,140], [30,144,255], [255,80,0], [100,60,20], [130,130,130], [50,200,50], [180,230,255], [220,220,220,150], [150,255,0]];
+
+const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+hands.setOptions({ 
+    maxNumHands: 1, 
+    modelComplexity: 0, // Mudar de 1 para 0 (Extremamente mais rápido e estável em PCs comuns)
+    minDetectionConfidence: 0.4, // Mais fácil de achar a mão inicialmente
+    minTrackingConfidence: 0.4  // Não desiste da mão tão fácil se ela tremer
+});
+hands.onResults(res => { handResults = res; });
+
+function setup() {
+    createCanvas(windowWidth, windowHeight);
+    video = createCapture({ video: { width: 1280, height: 720 } }, () => { recalcularGrid(); });
+    video.hide();
+    const camera = new Camera(video.elt, { onFrame: async () => { await hands.send({image: video.elt}); }, width: 1280, height: 720 });
+    camera.start();
+}
+
+function recalcularGrid() {
+    cols = floor(width / cellSize);
+    rows = floor(height / cellSize);
+    grid = make2DArray(cols, rows);
+}
+
+function make2DArray(c, r) {
+    let arr = new Array(c);
+    for (let i = 0; i < arr.length; i++) arr[i] = new Array(r).fill(0);
+    return arr;
+}
+
+function draw() {
+    if (!grid) return;
+    push(); translate(width, 0); scale(-1, 1); image(video, 0, 0, width, height); fill(0, 150); rect(0,0, width, height); pop();
+
+    if (handResults && handResults.multiHandLandmarks && handResults.multiHandLandmarks.length > 0) {
+        let lm = handResults.multiHandLandmarks[0];
+        let ix = floor((1 - lm[8].x) * width / cellSize);
+        let iy = floor(lm[8].y * height / cellSize);
+        
+        let isPointing = lm[8].y < lm[6].y && lm[12].y > lm[10].y;
+        let isV = lm[8].y < lm[6].y && lm[12].y < lm[10].y && lm[16].y > lm[14].y;
+        let isFist = lm[8].y > lm[6].y && lm[12].y > lm[10].y;
+
+        // --- DETECÇÃO DE ESTALO (Polegar toca no Médio) ---
+        let dSnap = dist(lm[4].x, lm[4].y, lm[12].x, lm[12].y);
+        if (dSnap < 0.05 && !isPointing && !isFist) {
+            triggerSnap(ix * cellSize, iy * cellSize);
+        }
+
+        fill(palette[currentElem]); noStroke(); ellipse(ix * cellSize, iy * cellSize, 15);
+
+        if (isPointing && !isV) spawn(ix, iy, currentElem);
+        else if (isV && millis() - lastToggleTime > 1200) {
+            currentElem = currentElem >= types.length - 1 ? 1 : currentElem + 1;
+            document.getElementById('elemName').innerText = types[currentElem];
+            lastToggleTime = millis();
+        } 
+        else if (isFist) spawn(ix, iy, 0, 10);
+    }
+
+    updatePhysics();
+    renderGrid();
+    drawSnapEffect();
+}
+
+function triggerSnap(x, y) {
+    if (waveRadius > 0) return; // Evita snaps múltiplos seguidos
+    waveRadius = 1;
+    waveX = x;
+    waveY = y;
+    
+    // Texto na tela
+    let msg = document.getElementById('snapMsg');
+    msg.style.display = 'block';
+    setTimeout(() => { msg.style.display = 'none'; }, 1000);
+}
+
+function drawSnapEffect() {
+    if (waveRadius > 0) {
+        noFill();
+        strokeWeight(10);
+        stroke(255, 100, 255, 255 - waveRadius/4);
+        ellipse(waveX, waveY, waveRadius);
+        waveRadius += 40;
+
+        // Limpa o grid à medida que a onda passa
+        let gridR = floor(waveRadius / (cellSize * 2));
+        let gx = floor(waveX / cellSize);
+        let gy = floor(waveY / cellSize);
+        
+        for(let i = -gridR; i < gridR; i++) {
+            for(let j = -gridR; j < gridR; j++) {
+                let cx = gx + i; let cy = gy + j;
+                if(cx >= 0 && cx < cols && cy >= 0 && cy < rows) {
+                    if (random() > 0.9) grid[cx][cy] = 0; // Efeito de desintegração gradual
+                }
+            }
+        }
+
+        if (waveRadius > width * 1.5) {
+            waveRadius = 0;
+            grid = make2DArray(cols, rows); // Limpeza total final
+        }
+    }
+}
+
+function spawn(x, y, type, radius = 2) {
+    for (let i = -radius; i < radius; i++) {
+        for (let j = -radius; j < radius; j++) {
+            let cx = x + i; let cy = y + j;
+            if (cx >= 0 && cx < cols && cy >= 0 && cy < rows) {
+                if (type === 0 || grid[cx][cy] === 0 || type >= 4) grid[cx][cy] = type;
+            }
+        }
+    }
+}
+
+function updatePhysics() {
+    for (let y = rows - 1; y >= 0; y--) {
+        for (let x = 0; x < cols; x++) {
+            let state = grid[x][y];
+            if (state === 0 || state === 4 || state === 5 || state === 7) continue;
+
+            if (state === 1) { // Areia
+                if (y < rows-1 && (grid[x][y+1] === 0 || grid[x][y+1] === 2)) mover(x, y, x, y+1);
+                else {
+                    let d = random() > 0.5 ? 1 : -1;
+                    if (y < rows-1 && x+d >= 0 && x+d < cols && grid[x+d][y+1] === 0) mover(x, y, x+d, y+1);
+                }
+            }
+            else if (state === 2) { // Água
+                if (y < rows-1 && grid[x][y+1] === 0) mover(x, y, x, y+1);
+                else {
+                    let d = random() > 0.5 ? 1 : -1;
+                    if (x+d >= 0 && x+d < cols && grid[x+d][y] === 0) mover(x, y, x+d, y);
+                }
+            }
+            else if (state === 3) { // FOGO 
+                if (y > 0) {
+                    let nx = x + floor(random(-1, 2));
+                    if (nx >= 0 && nx < cols) {
+                        if (grid[nx][y-1] === 4 || grid[nx][y-1] === 6) grid[nx][y-1] = 3;
+                        if (grid[nx][y-1] === 7) grid[nx][y-1] = 2;
+                        if (grid[nx][y-1] === 0 && random() > 0.4) grid[nx][y-1] = 3;
+                    }
+                }
+                if (random() > 0.15) grid[x][y] = 0;
+            }
+            else if (state === 6) { // Planta
+                if (random() > 0.98) {
+                    let nx = x+floor(random(-1,2)), ny = y+floor(random(-1,2));
+                    if (nx>=0 && nx<cols && ny>=0 && ny<rows && grid[nx][ny] === 2) grid[nx][ny] = 6;
+                }
+            }
+            else if (state === 8) { // Vapor
+                if (y > 0 && grid[x][y-1] === 0) mover(x, y, x, y-1);
+                if (random() > 0.05) grid[x][y] = 0;
+            }
+            else if (state === 9) { // Ácido
+                if (y < rows-1 && grid[x][y+1] !== 0 && grid[x][y+1] !== 5 && grid[x][y+1] !== 9) {
+                    grid[x][y+1] = 0; grid[x][y] = 0;
+                } else if (y < rows-1 && grid[x][y+1] === 0) mover(x, y, x, y+1);
+            }
+        }
+    }
+}
+
+function mover(x1, y1, x2, y2) {
+    let temp = grid[x2][y2];
+    grid[x2][y2] = grid[x1][y1];
+    grid[x1][y1] = temp;
+}
+
+function renderGrid() {
+    noStroke();
+    for (let x = 0; x < cols; x++) {
+        for (let y = 0; y < rows; y++) {
+            let s = grid[x][y];
+            if (s !== 0) {
+                if (s === 3) fill(255, random(100, 255), 0);
+                else fill(palette[s]);
+                rect(x * cellSize, y * cellSize, cellSize, cellSize);
+            }
+        }
+    }
+}
+
+function windowResized() { resizeCanvas(windowWidth, windowHeight); recalcularGrid(); }
+</script>
+</body>
+</html>

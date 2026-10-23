@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Interruptor Claro / Escuro</title>
+
+<style>
+    html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        transition: background-color 0.6s ease;
+        background-color: #f2f2f2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Arial, sans-serif;
+    }
+
+    body.dark {
+        background-color: #121212;
+    }
+
+    .switch {
+        width: 80px;
+        height: 40px;
+        background: #ccc;
+        border-radius: 40px;
+        position: relative;
+        cursor: pointer;
+        transition: background 0.3s ease;
+    }
+
+    .switch::after {
+        content: "";
+        width: 34px;
+        height: 34px;
+        background: white;
+        border-radius: 50%;
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        transition: transform 0.3s ease;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+
+    .switch.active {
+        background: #4f4f4f;
+    }
+
+    .switch.active::after {
+        transform: translateX(40px);
+    }
+</style>
+</head>
+
+<body>
+
+<div class="switch" id="switch"></div>
+
+<script>
+const body = document.body;
+const sw = document.getElementById("switch");
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioCtx();
+
+function tic() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = "square";
+    osc.frequency.setValueAtTime(900, audioCtx.currentTime);
+
+    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.04);
+}
+
+function toc() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = "square";
+    osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+
+    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.04);
+}
+
+sw.addEventListener("click", () => {
+    const isActive = sw.classList.toggle("active");
+    body.classList.toggle("dark");
+
+    if (isActive) {
+        tic(); // ligar
+    } else {
+        toc(); // desligar
+    }
+});
+</script>
+
+</body>
+</html>

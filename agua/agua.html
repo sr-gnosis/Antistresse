@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Mar Noturno Estável</title>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #020617;
+    cursor: grab;
+}
+canvas { display: block; }
+.hint {
+    position: fixed;
+    bottom: 10px;
+    right: 15px;
+    color: rgba(255,255,255,0.6);
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div class="hint">mexa o mouse • segure para pegar água</div>
+
+<script>
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
+
+let w, h;
+function resize() {
+    w = c.width = innerWidth;
+    h = c.height = innerHeight;
+}
+addEventListener("resize", resize);
+resize();
+
+/* -------- ÁGUA SIMPLES (OFFSET) -------- */
+const spacing = 18;
+const points = [];
+const baseY = () => h * 0.6;
+
+function init() {
+    points.length = 0;
+    for (let x = 0; x <= w; x += spacing) {
+        points.push({ x, offset: 0 });
+    }
+}
+init();
+
+function updateWater() {
+    for (let p of points) {
+        p.offset *= 0.96; // dissipação suave
+    }
+}
+
+function drawWater() {
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    ctx.lineTo(points[0].x, baseY() + points[0].offset);
+
+    for (let p of points) {
+        ctx.lineTo(p.x, baseY() + p.offset);
+    }
+
+    ctx.lineTo(w, h);
+    ctx.closePath();
+
+    const g = ctx.createLinearGradient(0, baseY() - 80, 0, h);
+    g.addColorStop(0, "#0a2a4f");
+    g.addColorStop(1, "#020617");
+    ctx.fillStyle = g;
+    ctx.fill();
+}
+
+/* -------- INTERAÇÃO -------- */
+let mouse = { x: 0, y: 0, down: false };
+let drops = [];
+
+c.onmousedown = () => {
+    mouse.down = true;
+    c.style.cursor = "grabbing";
+};
+c.onmouseup = () => {
+    mouse.down = false;
+    c.style.cursor = "grab";
+};
+c.onmousemove = e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+
+    points.forEach(p => {
+        const d = Math.abs(p.x - mouse.x);
+        if (d < 50) {
+            p.offset -= (50 - d) * (mouse.down ? 0.6 : 0.25);
+        }
+    });
+
+    // pingos VISUAIS (não afetam a água)
+    if (mouse.down && mouse.y > baseY() - 30) {
+        if (Math.random() < 0.2) {
+            drops.push({
+                x: mouse.x + (Math.random() - 0.5) * 10,
+                y: mouse.y,
+                vy: 1 + Math.random() * 2,
+                life: 1
+            });
+        }
+    }
+};
+
+/* -------- GOTAS -------- */
+function updateDrops() {
+    for (let d of drops) {
+        d.vy += 0.2;
+        d.y += d.vy;
+        d.life -= 0.02;
+    }
+    drops = drops.filter(d => d.life > 0 && d.y < h);
+}
+
+function drawDrops() {
+    ctx.fillStyle = "rgba(180,220,255,0.7)";
+    for (let d of drops) {
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+/* -------- CÉU -------- */
+function drawSky() {
+    ctx.fillStyle = "#020617";
+    ctx.fillRect(0, 0, w, h);
+
+    for (let i = 0; i < 40; i++) {
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.fillRect(Math.random() * w, Math.random() * h * 0.45, 1, 1);
+    }
+}
+
+/* -------- LOOP -------- */
+function loop() {
+    drawSky();
+    updateWater();
+    updateDrops();
+    drawWater();
+    drawDrops();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

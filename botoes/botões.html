@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel de Botões</title>
+<style>
+    body {
+        margin: 0;
+        background: black;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 40px;
+    }
+
+    .btn {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        border: none;
+        cursor: pointer;
+        opacity: 0.35;
+        transition: opacity 0.2s, box-shadow 0.2s, transform 0.1s;
+    }
+
+    .btn.active {
+        opacity: 1;
+        box-shadow: 0 0 25px currentColor;
+    }
+
+    .btn:active {
+        transform: scale(0.9);
+    }
+
+    .red { background: #ff3b3b; color: #ff3b3b; }
+    .yellow { background: #ffd93b; color: #ffd93b; }
+    .green { background: #3bff6f; color: #3bff6f; }
+</style>
+</head>
+<body>
+
+<button class="btn red"></button>
+<button class="btn yellow"></button>
+<button class="btn green"></button>
+
+<script>
+    const buttons = document.querySelectorAll(".btn");
+    let activeOrder = []; // guarda a ordem dos botões ativos
+
+    function playSound() {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = "sine";
+        osc.frequency.value = 550;
+
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+    }
+
+    buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+
+            // se já estiver ativo, remove
+            if (activeOrder.includes(btn)) {
+                btn.classList.remove("active");
+                activeOrder = activeOrder.filter(b => b !== btn);
+                playSound();
+                return;
+            }
+
+            // se já tiver dois ativos, remove o mais antigo
+            if (activeOrder.length === 2) {
+                const oldest = activeOrder.shift();
+                oldest.classList.remove("active");
+            }
+
+            // ativa o novo
+            btn.classList.add("active");
+            activeOrder.push(btn);
+            playSound();
+        });
+    });
+</script>
+
+</body>
+</html>

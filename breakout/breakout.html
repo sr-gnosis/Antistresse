@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zen Breakout - Progressivo</title>
+    <style>
+        :root {
+            --bg-body: #f0f4f8;
+            --bg-canvas: #ffffff;
+            --text-color: #6a7d8d;
+            --shadow: rgba(0,0,0,0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: var(--bg-body);
+            font-family: 'Segoe UI', sans-serif;
+            transition: background 0.8s ease;
+            overflow: hidden;
+        }
+
+        body.theme-light { --bg-body: #f0f4f8; --bg-canvas: #ffffff; --text-color: #6a7d8d; }
+        body.theme-gradient { --bg-body: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); --bg-canvas: rgba(255, 255, 255, 0.4); --text-color: #4a5568; }
+        body.theme-dark { --bg-body: #1a202c; --bg-canvas: #2d3748; --text-color: #e2e8f0; --shadow: rgba(0,0,0,0.4); }
+
+        canvas {
+            background: var(--bg-canvas);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px var(--shadow);
+            display: block;
+            backdrop-filter: blur(5px);
+            transition: background 0.5s ease;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            text-align: center;
+            color: var(--text-color);
+            pointer-events: none;
+        }
+
+        #theme-tip {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: var(--text-color);
+            font-size: 0.8em;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body class="theme-light">
+
+    <div id="ui">
+        <h1>Zen Breakout</h1>
+        <p>Aceleração Ativa | Use o mouse para mover</p>
+    </div>
+
+    <div id="theme-tip">Pressione "R" para mudar o tema</div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = 600;
+    canvas.height = 400;
+
+    // Estados
+    let score = 0;
+    const themes = ['theme-light', 'theme-gradient', 'theme-dark'];
+    let currentThemeIndex = 0;
+
+    // Configurações da Raquete
+    const paddleHeight = 10;
+    const paddleWidth = 90;
+    let paddleX = (canvas.width - paddleWidth) / 2;
+
+    // Configurações da Bola
+    let x = canvas.width / 2;
+    let y = canvas.height - 35;
+    let dx = 2.2;
+    let dy = -2.2;
+    const ballRadius = 8;
+    const speedIncrement = 1.015; // Aumenta a velocidade em 1.5% a cada colisão importante
+    const maxSpeed = 7; // Limite para não ficar impossível
+
+    // Tijolos
+    const brickRowCount = 5;
+    const brickColumnCount = 7;
+    const brickWidth = 75;
+    const brickHeight = 22;
+    const brickPadding = 8;
+    const brickOffsetTop = 50;
+    const brickOffsetLeft = 47;
+    const colors = ["#ffadad", "#ffd6a5", "#fdffb6", "#caffbf", "#9bf6ff"];
+
+    let bricks = [];
+    for(let c=0; c<brickColumnCount; c++) {
+        bricks[c] = [];
+        for(let r=0; r<brickRowCount; r++) {
+            bricks[c][r] = { x: 0, y: 0, status: 1, color: colors[r] };
+        }
+    }
+
+    // Áudio
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, type = 'triangle', duration = 0.5) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.type = type;
+        oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + duration);
+    }
+
+    // Alternar Tema
+    window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'r') {
+            currentThemeIndex = (currentThemeIndex + 1) % themes.length;
+            document.body.className = themes[currentThemeIndex];
+            playTone(440, 'sine', 0.2);
+        }
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        let relativeX = e.clientX - canvas.offsetLeft;
+        if(relativeX > 0 && relativeX < canvas.width) {
+            paddleX = relativeX - paddleWidth / 2;
+        }
+    });
+
+    function increaseSpeed() {
+        if (Math.abs(dx) < maxSpeed) {
+            dx *= speedIncrement;
+            dy *= speedIncrement;
+        }
+    }
+
+    function collisionDetection() {
+        for(let c=0; c<brickColumnCount; c++) {
+            for(let r=0; r<brickRowCount; r++) {
+                let b = bricks[c][r];
+                if(b.status == 1) {
+                    if(x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+                        dy = -dy;
+                        b.status = 0;
+                        score++;
+                        increaseSpeed(); // Acelera ao quebrar tijolo
+                        playTone(260 + (r * 40), 'sine', 0.6);
+                        if(score == brickRowCount * brickColumnCount) {
+                            alert("Paz total alcançada.");
+                            document.location.reload();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(x, y, ballRadius, 0, Math.PI*2);
+        ctx.fillStyle = "#90e0ef";
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawPaddle() {
+        ctx.beginPath();
+        ctx.roundRect(paddleX, canvas.height - paddleHeight - 10, paddleWidth, paddleHeight, 5);
+        ctx.fillStyle = "#a8dadc";
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawBricks() {
+        for(let c=0; c<brickColumnCount; c++) {
+            for(let r=0; r<brickRowCount; r++) {
+                if(bricks[c][r].status == 1) {
+                    let brickX = (c*(brickWidth+brickPadding))+brickOffsetLeft;
+                    let brickY = (r*(brickHeight+brickPadding))+brickOffsetTop;
+                    bricks[c][r].x = brickX;
+                    bricks[c][r].y = brickY;
+                    ctx.beginPath();
+                    ctx.roundRect(brickX, brickY, brickWidth, brickHeight, 4);
+                    ctx.fillStyle = bricks[c][r].color;
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            }
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawBricks();
+        drawBall();
+        drawPaddle();
+        collisionDetection();
+
+        if(x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+            dx = -dx;
+            playTone(200, 'sine', 0.1);
+        }
+        if(y + dy < ballRadius) {
+            dy = -dy;
+            playTone(220, 'sine', 0.1);
+        } else if(y + dy > canvas.height - ballRadius - 10) {
+            if(x > paddleX && x < paddleX + paddleWidth) {
+                dy = -dy;
+                increaseSpeed(); // Acelera ao bater na raquete
+                playTone(300, 'triangle', 0.2);
+            } else {
+                setTimeout(() => document.location.reload(), 300);
+                return;
+            }
+        }
+
+        x += dx;
+        y += dy;
+        requestAnimationFrame(draw);
+    }
+
+    draw();
+</script>
+</body>
+</html>

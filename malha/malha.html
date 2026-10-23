@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Tecido Interativo</title>
+<style>
+html,body{margin:0;padding:0;overflow:hidden;background:#0b0f14;font-family:Arial}
+canvas{display:block}
+#hint{position:fixed;bottom:12px;left:12px;color:rgba(255,255,255,.55);font-size:13px}
+#tools{position:fixed;top:12px;left:12px;display:flex;gap:8px}
+.tool{width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,.12);
+display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:.2s}
+.tool.active{background:rgba(255,255,255,.45)}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="tools">
+<div class="tool active" data-tool="hand">🖐️</div>
+<div class="tool" data-tool="knife">🔪</div>
+<div class="tool" data-tool="grenade">💣</div>
+<div class="tool" data-tool="wind">🌬️</div>
+<div class="tool" data-tool="fire">🔥</div>
+</div>
+
+<div id="hint">Aperte <b>R</b> para reiniciar a malha</div>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+resize();
+onresize = ()=>{ resize(); createCloth(); };
+
+const COLS=80, ROWS=55, SPACING=9;
+const GRAVITY=.3, DAMPING=.999;
+const TEAR_FORCE=20;
+
+let mouse={x:0,y:0,px:0,py:0,down:false,speed:0};
+let currentTool="hand";
+let particles=[], grenades=[];
+let slashTrail=[];
+
+function lineIntersect(ax,ay,bx,by,cx,cy,dx,dy){
+  const r1x=bx-ax,r1y=by-ay;
+  const r2x=dx-cx,r2y=dy-cy;
+  const d=r1x*r2y-r1y*r2x;
+  if(d===0)return false;
+  const u=((cx-ax)*r1y-(cy-ay)*r1x)/d;
+  const t=((cx-ax)*r2y-(cy-ay)*r2x)/d;
+  return t>=0&&t<=1&&u>=0&&u<=1;
+}
+
+class Particle{
+  constructor(x,y,color){
+    this.x=x;this.y=y;
+    this.vx=(Math.random()-.5)*4;
+    this.vy=(Math.random()-.5)*4;
+    this.life=1;
+    this.color=color;
+  }
+  update(){this.life-=.03;this.x+=this.vx;this.y+=this.vy;}
+  draw(){
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${this.color},${this.life})`;
+    ctx.fill();
+  }
+}
+
+class Point{
+  constructor(x,y,pinned){
+    this.x=x;this.y=y;
+    this.oldx=x;this.oldy=y;
+    this.pinned=pinned;
+    this.links=[];
+    this.heat=0;
+  }
+
+  update(){
+    if(this.pinned) return;
+
+    let vx=(this.x-this.oldx)*DAMPING;
+    let vy=(this.y-this.oldy)*DAMPING;
+
+    this.oldx=this.x;
+    this.oldy=this.y;
+
+    this.x+=vx;
+    this.y+=vy+GRAVITY;
+
+    if(this.x<0)this.x=0;
+    if(this.x>canvas.width)this.x=canvas.width;
+    if(this.y>canvas.height){
+      this.y=canvas.height;
+      this.oldy=this.y;
+    }
+
+    if(currentTool==="fire" && mouse.down){
+      if(Math.hypot(this.x-mouse.x,this.y-mouse.y)<20){
+        this.heat=1;
+      }
+    }
+
+    if(this.heat>0){
+      this.heat-=.01;
+      if(this.heat>0.7)this.links=[];
+    }
+  }
+
+  draw(){ this.links.forEach(l=>l.draw()); }
+}
+
+class Link{
+  constructor(p1,p2){
+    this.p1=p1;this.p2=p2;
+    this.rest=SPACING;
+    this.cut=false;
+  }
+
+  update(){
+    if(this.cut)return;
+
+    const dx=this.p2.x-this.p1.x;
+    const dy=this.p2.y-this.p1.y;
+    const dist=Math.hypot(dx,dy)||.001;
+    const diff=(this.rest-dist)/dist*.5;
+
+    if(!this.p1.pinned){this.p1.x-=dx*diff;this.p1.y-=dy*diff;}
+    if(!this.p2.pinned){this.p2.x+=dx*diff;this.p2.y+=dy*diff;}
+
+    if(currentTool==="knife" && mouse.down && mouse.speed>18 &&
+      lineIntersect(mouse.px,mouse.py,mouse.x,mouse.y,
+      this.p1.x,this.p1.y,this.p2.x,this.p2.y)){
+        this.cut=true;
+        particles.push(new Particle(
+          (this.p1.x+this.p2.x)/2,
+          (this.p1.y+this.p2.y)/2,
+          "255,255,255"
+        ));
+    }
+  }
+
+  draw(){
+    if(this.cut)return;
+    ctx.beginPath();
+    ctx.moveTo(this.p1.x,this.p1.y);
+    ctx.lineTo(this.p2.x,this.p2.y);
+    ctx.strokeStyle="rgba(140,190,255,.6)";
+    ctx.stroke();
+  }
+}
+
+let points=[];
+
+function createCloth(){
+  points=[];particles=[];
+  const sx=canvas.width/2-(COLS*SPACING)/2;
+
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      const p=new Point(sx+x*SPACING,40+y*SPACING,y===0);
+      points.push(p);
+
+      if(x>0)p.links.push(new Link(p,points[points.length-2]));
+      if(y>0)p.links.push(new Link(p,points[(y-1)*COLS+x]));
+    }
+  }
+}
+
+function loop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  points.forEach(p=>p.update());
+  for(let i=0;i<5;i++)
+    points.forEach(p=>p.links.forEach(l=>l.update()));
+
+  points.forEach(p=>p.draw());
+
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p=>{p.update();p.draw();});
+
+  requestAnimationFrame(loop);
+}
+
+canvas.onmousedown=()=>mouse.down=true;
+canvas.onmouseup=()=>mouse.down=false;
+canvas.onmousemove=e=>{
+  mouse.px=mouse.x;mouse.py=mouse.y;
+  mouse.x=e.clientX;mouse.y=e.clientY;
+  mouse.speed=Math.hypot(mouse.x-mouse.px,mouse.y-mouse.py);
+};
+
+document.onkeydown=e=>{
+  if(e.key.toLowerCase()==="r")createCloth();
+};
+
+document.querySelectorAll(".tool").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll(".tool").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    currentTool=b.dataset.tool;
+  };
+});
+
+createCloth();
+loop();
+</script>
+</body>
+</html>

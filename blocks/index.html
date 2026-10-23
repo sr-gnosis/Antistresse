@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>AR Blocks - Movimento Fluido</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        .ui {
+            position: absolute; top: 20px; left: 20px; color: white;
+            background: rgba(0,0,0,0.5); padding: 15px; border-radius: 12px;
+            backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1);
+            z-index: 10; pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="ui">
+    ✨ <b>Movimento Suavizado</b><br>
+    ✊ Criar (Segure) | 👌 Arrastar | ✌️ Apagar
+</div>
+
+<script>
+let video;
+let handResults = null;
+let blocos = [];
+let blocoArrastando = null;
+
+// Configurações de suavização extrema
+let cursorX = 0, cursorY = 0;
+let smoothFactor = 0.15; // Ajuste entre 0.05 (muito lento/fluido) e 0.3 (rápido)
+
+let holdCounter = 0;
+const holdTarget = 60; // ~1.5 segundos a 60fps
+
+const hands = new Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1, // 1 é mais rápido que o 0 para desktops
+    minDetectionConfidence: 0.75,
+    minTrackingConfidence: 0.9
+});
+
+hands.onResults(results => { handResults = results; });
+
+function setup() {
+    createCanvas(windowWidth, windowHeight);
+    // Configura o vídeo para tentar 60fps
+    video = createCapture({
+        video: { frameRate: { ideal: 60 }, width: windowWidth, height: windowHeight }
+    });
+    video.hide();
+
+    const camera = new Camera(video.elt, {
+        onFrame: async () => { await hands.send({image: video.elt}); },
+        width: windowWidth, height: windowHeight
+    });
+    camera.start();
+    
+    rectMode(CENTER); // Facilita a física e o arraste
+}
+
+function draw() {
+    // Fundo cinematográfico
+    push();
+    translate(width, 0);
+    scale(-1, 1);
+    image(video, 0, 0, width, height);
+    fill(0, 30); // Leve vinheta
+    rect(width/2, height/2, width, height);
+    pop();
+
+    if (handResults && handResults.multiHandLandmarks.length > 0) {
+        const landmarks = handResults.multiHandLandmarks[0];
+        
+        // Coordenadas brutas
+        let rawX = (1 - landmarks[8].x) * width;
+        let rawY = landmarks[8].y * height;
+        
+        // INTERPOLAÇÃO EXPONENCIAL: O segredo da fluidez
+        cursorX += (rawX - cursorX) * smoothFactor;
+        cursorY += (rawY - cursorY) * smoothFactor;
+
+        const px = (1 - landmarks[4].x) * width;
+        const py = landmarks[4].y * height;
+        const mx = (1 - landmarks[12].x) * width;
+        const my = landmarks[12].y * height;
+
+        let dPinca = dist(cursorX, cursorY, px, py);
+        let dApagar = dist(cursorX, cursorY, mx, my);
+        let maoFechada = landmarks[8].y > landmarks[6].y && landmarks[12].y > landmarks[10].y;
+
+        // Lógica de Arrastar com "Sticky Logic"
+        if (dPinca < (blocoArrastando ? 120 : 60)) {
+            if (!blocoArrastando) {
+                for (let b of blocos) {
+                    if (dist(cursorX, cursorY, b.x, b.y) < b.s/2) {
+                        blocoArrastando = b;
+                        break;
+                    }
+                }
+            } else {
+                // O bloco persegue o cursor com uma física de mola
+                blocoArrastando.x += (cursorX - blocoArrastando.x) * 0.25;
+                blocoArrastando.y += (cursorY - blocoArrastando.y) * 0.25;
+            }
+        } else {
+            blocoArrastando = null;
+        }
+
+        // Lógica de Criar com feedback visual circular
+        if (maoFechada && !blocoArrastando) {
+            holdCounter++;
+            noFill();
+            stroke(255, 200);
+            strokeWeight(3);
+            arc(cursorX, cursorY, 60, 60, -HALF_PI, map(holdCounter, 0, holdTarget, 0, TWO_PI) - HALF_PI);
+            
+            if (holdCounter >= holdTarget) {
+                blocos.push({x: cursorX, y: cursorY, s: 80, color: color(0, 150, 255, 180)});
+                holdCounter = 0;
+            }
+        } else {
+            holdCounter = 0;
+        }
+
+        // Lógica de Apagar
+        if (dApagar < 50 && dPinca > 70) {
+            blocos = blocos.filter(b => dist(cursorX, cursorY, b.x, b.y) > b.s/2);
+        }
+
+        // Cursor Estilizado
+        drawCursor(cursorX, cursorY, dPinca < 60);
+    }
+
+    // Desenha os blocos com brilho (Bloom fake)
+    for (let b of blocos) {
+        drawStyledBlock(b);
+    }
+}
+
+function drawCursor(x, y, isGrabbing) {
+    noFill();
+    stroke(255, isGrabbing ? 255 : 100);
+    strokeWeight(2);
+    ellipse(x, y, isGrabbing ? 20 : 30);
+    fill(255);
+    noStroke();
+    ellipse(x, y, 5);
+}
+
+function drawStyledBlock(b) {
+    push();
+    translate(b.x, b.y);
+    // Sombra/Brilho
+    fill(b.color);
+    drawingContext.shadowBlur = 15;
+    drawingContext.shadowColor = b.color;
+    stroke(255, 180);
+    strokeWeight(2);
+    rect(0, 0, b.s, b.s, 15);
+    // Detalhe interno
+    noStroke();
+    fill(255, 60);
+    rect(0, -b.s/4, b.s/1.5, b.s/6, 5);
+    pop();
+    // Limpa o efeito de sombra para não pesar o resto do desenho
+    drawingContext.shadowBlur = 0;
+}
+
+function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+</script>
+</body>
+</html>

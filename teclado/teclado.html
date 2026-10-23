@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teclado Mecânico High-Pitch</title>
+    <style>
+        :root {
+            --bg-color: #202020;
+            --key-bg: rgba(255, 255, 255, 0.08);
+            --accent: #00d4ff;
+        }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+            color: #ffffff;
+        }
+
+        /* Linha inferior onde o texto aparece */
+        #display-line {
+            width: 80%;
+            margin-bottom: 60px;
+            border-bottom: 2px solid rgba(0, 212, 255, 0.4);
+            padding: 10px;
+            min-height: 45px;
+            font-size: 35px;
+            text-align: center;
+            font-weight: 200;
+            letter-spacing: 5px;
+            text-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+        }
+
+        /* Teclado Arredondado e Transparente */
+        .keyboard {
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 45px;
+            padding: 25px;
+            margin-bottom: 50px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+        }
+
+        .row {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .key {
+            background: var(--key-bg);
+            padding: 18px;
+            border-radius: 20px;
+            min-width: 55px;
+            text-align: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.05s ease;
+            border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: inset 0 1px 1px rgba(255,255,255,0.1);
+        }
+
+        /* Efeito de clique */
+        .key:active, .key.pressed {
+            background: var(--accent);
+            color: #000;
+            transform: scale(0.9) translateY(4px);
+            box-shadow: 0 0 25px var(--accent);
+        }
+
+        .key.space { width: 380px; }
+        .key.back { width: 85px; color: #ff6b6b; font-size: 14px; }
+
+    </style>
+</head>
+<body>
+
+    <div id="display-line"></div>
+
+    <div class="keyboard">
+        <div class="row">
+            <div class="key">Q</div><div class="key">W</div><div class="key">E</div><div class="key">R</div>
+            <div class="key">T</div><div class="key">Y</div><div class="key">U</div><div class="key">I</div>
+            <div class="key">O</div><div class="key">P</div>
+        </div>
+        <div class="row">
+            <div class="key">A</div><div class="key">S</div><div class="key">D</div><div class="key">F</div>
+            <div class="key">G</div><div class="key">H</div><div class="key">J</div><div class="key">K</div>
+            <div class="key">L</div>
+        </div>
+        <div class="row">
+            <div class="key">Z</div><div class="key">X</div><div class="key">C</div><div class="key">V</div>
+            <div class="key">B</div><div class="key">N</div><div class="key">M</div>
+            <div class="key back">DEL</div>
+        </div>
+        <div class="row">
+            <div class="key space"> </div>
+        </div>
+    </div>
+
+    <script>
+        const display = document.getElementById('display-line');
+        let textBuffer = "";
+
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSharpClick() {
+            if (ctx.state === 'suspended') ctx.resume();
+
+            const noise = ctx.createBufferSource();
+            const gain = ctx.createGain();
+            const filter = ctx.createBiquadFilter();
+
+            // Gerar ruído branco
+            const duration = 0.03; // Mais curto para ser mais seco
+            const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            noise.buffer = buffer;
+
+            // FILTRO AGUDO (Aumentado para sons mais "clicantes")
+            // Frequências entre 2500Hz e 4500Hz para o "tic" perfeito
+            const highFrequencies = [2800, 3200, 3800, 4200];
+            filter.type = "bandpass";
+            filter.frequency.value = highFrequencies[Math.floor(Math.random() * highFrequencies.length)];
+            filter.Q.value = 2; // Ressonância mais fechada para ser "afiado"
+
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(ctx.destination);
+
+            noise.start();
+        }
+
+        function handleInput(char) {
+            playSharpClick();
+            if (char === "DEL") {
+                textBuffer = textBuffer.slice(0, -1);
+            } else {
+                textBuffer += char;
+            }
+            display.innerText = textBuffer;
+        }
+
+        // Mouse
+        document.querySelectorAll('.key').forEach(k => {
+            k.addEventListener('mousedown', () => handleInput(k.innerText === "" ? " " : k.innerText));
+        });
+
+        // Teclado
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toUpperCase();
+            let el;
+            if (e.key === " ") { el = document.querySelector('.space'); handleInput(" "); }
+            else if (e.key === "Backspace") { el = document.querySelector('.back'); handleInput("DEL"); }
+            else {
+                el = Array.from(document.querySelectorAll('.key')).find(k => k.innerText === key);
+                if (el) handleInput(key);
+            }
+            if (el) {
+                el.classList.add('pressed');
+                setTimeout(() => el.classList.remove('pressed'), 100);
+            }
+        });
+    </script>
+</body>
+</html>
